@@ -23,7 +23,7 @@ def get_now_br():
     # Isso permite comparar diretamente com o DataFrame do Pandas
     now_utc = datetime.now(timezone.utc)
     now_br = now_utc - timedelta(hours=3)
-    return now_br.replace(tzinfo=None
+    return now_br.replace(tzinfo=None)
 
 @st.cache_data(ttl=300)
 def load_market_data():
