@@ -1,0 +1,8 @@
+streamlit 
+pandas 
+plotly 
+st-gsheets-connection
+webdriver-manager==4.0.1
+requests
+gspread
+oauth2client
