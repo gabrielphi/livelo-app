@@ -1,86 +1,95 @@
 import streamlit as st
 import pandas as pd
+import json
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 
 # --- CONFIGURAÇÕES DA PÁGINA ---
-st.set_page_config(page_title="Livelo Alpha Insights", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Livelo Market Intel", page_icon="📈", layout="wide")
 
-st.title("🚀 Livelo Alpha Insights")
-st.markdown("---")
+# --- CONEXÃO COM DADOS (PLANO B) ---
+@st.cache_data(ttl=600) # Cache de 10 minutos
+def load_data():
+    try:
+        # 1. Carrega o JSON puro da Secret
+        creds_info = json.loads(st.secrets["GOOGLE_JSON_CREDENTIALS"])
+        
+        # 2. Conecta usando o dicionário de credenciais
+        conn = st.connection("gsheets", type=GSheetsConnection, **creds_info)
+        
+        # 3. Lê os dados
+        url_planilha = "https://docs.google.com/spreadsheets/d/1M0nFxK-O10wTxdljuBGDsAnd86234QNiQqme9kqlOiE/edit"
+        data = conn.read(spreadsheet=url_planilha)
+        return data
+    except Exception as e:
+        st.error(f"❌ Falha crítica na conexão: {e}")
+        return None
 
-# --- CONEXÃO COM DADOS ---
-# O Streamlit possui uma conexão nativa otimizada para Google Sheets
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df = conn.read(spreadsheet=st.secrets["GOOGLE_SHEET_URL"], ttl="10m")
-    
-    # Tratamento inicial dos dados
+df = load_data()
+
+if df is not None:
+    # Tratamento de Dados
     df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
     df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
-except Exception as e:
-    st.error(f"Erro ao conectar com a planilha: {e}")
-    st.stop()
 
-# --- BARRA LATERAL (FILTROS) ---
-st.sidebar.header("Filtros de Busca")
-busca_loja = st.sidebar.text_input("🔍 Buscar Loja", "")
-min_pontos = st.sidebar.slider("Pontuação Mínima", 5, 20, 5)
+    # --- INTERFACE ---
+    st.title("📈 Livelo Market Intelligence")
+    st.markdown("Dashboard profissional para monitoramento de acúmulo de pontos.")
 
-# Filtragem de Dados
-df_filtrado = df[df['Valor'] >= min_pontos]
-if busca_loja:
-    df_filtrado = df_filtrado[df_filtrado['Loja'].str.contains(busca_loja, case=False)]
+    # Sidebar
+    st.sidebar.header("Filtros")
+    filtro_loja = st.sidebar.text_input("🔍 Buscar Parceiro")
+    min_pontos = st.sidebar.number_input("Mínimo de Pontos", value=5)
 
-# --- MÉTRICAS EM DESTAQUE ---
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-    st.metric("Lojas Ativas (5+)", len(df_filtrado['Loja'].unique()))
-
-with col2:
-    melhor_hoje = df_filtrado.sort_values(by='Data', ascending=False).iloc[0]
-    st.metric("Melhor Oferta Atual", f"{melhor_hoje['Valor']} pts", melhor_hoje['Loja'])
-
-with col3:
-    # Cálculo de "Cashback" (Assumindo milheiro a R$ 35,00)
-    valor_cashback = (melhor_hoje['Valor'] * 35) / 1000 * 100
-    st.metric("Cashback Equiv. (Máx)", f"{valor_cashback:.1f}%")
-
-with col4:
-    total_historico = len(df)
-    st.metric("Registros no Banco", total_historico)
-
-# --- VISUALIZAÇÃO PRINCIPAL ---
-tab1, tab2, tab3 = st.tabs(["🔥 Ofertas Atuais", "📈 Histórico ATH", "📊 Análise de Mercado"])
-
-with tab1:
-    st.subheader("Oportunidades Disponíveis")
-    # Mostra apenas a última execução de cada loja
-    df_latest = df_filtrado.sort_values('Data').groupby('Loja').last().reset_index()
+    # Lógica de Filtro
+    mask = (df['Valor'] >= min_pontos)
+    if filtro_loja:
+        mask &= df['Loja'].str.contains(filtro_loja, case=False)
     
-    # Formatação de "Cards" visuais
-    cols = st.columns(3)
-    for i, row in df_latest.iterrows():
-        with cols[i % 3]:
-            with st.container(border=True):
-                st.image(row['Logo'], width=80)
+    df_filtered = df[mask]
+
+    # --- MÉTRICAS ---
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("Parceiros Ativos", len(df_filtered['Loja'].unique()))
+    with m2:
+        top_loja = df_filtered.sort_values(by='Valor', ascending=False).iloc[0]
+        st.metric("Maior Pontuação", f"{top_loja['Valor']} pts", top_loja['Loja'])
+    with m3:
+        # Cálculo de Cashback Equivalente (Milheiro a R$ 35,00)
+        cashback = (top_loja['Valor'] * 35 / 1000) * 100
+        st.metric("Cashback Máximo Est.", f"{cashback:.1f}%")
+
+    # --- VISUALIZAÇÃO ---
+    tab1, tab2 = st.tabs(["💎 Ofertas Atuais", "📊 Histórico de Ofertas"])
+
+    with tab1:
+        # Mostra os cards das lojas
+        df_now = df_filtered.sort_values('Data').groupby('Loja').last().reset_index()
+        
+        cols = st.columns(4)
+        for idx, row in df_now.iterrows():
+            with cols[idx % 4]:
+                st.image(row['Logo'], width=100)
                 st.subheader(row['Loja'])
-                st.write(f"**Pontuação:** {row['Pontos']}")
-                st.caption(f"Atualizado em: {row['Data'].strftime('%d/%m %H:%M')}")
-                st.link_button("Ir para Livelo", f"https://www.livelo.com.br/juntar-pontos/todos-os-parceiros")
+                st.info(f"**{row['Pontos']}**")
+                st.caption(f"Tipo: {row['Tipo']}")
+                st.divider()
 
-with tab2:
-    st.subheader("Gráfico de Evolução (All-Time High)")
-    # Gráfico interativo com Plotly
-    lojas_selecionadas = st.multiselect("Selecione lojas para comparar", df['Loja'].unique(), default=df['Loja'].unique()[:3])
-    df_hist = df[df['Loja'].isin(lojas_selecionadas)]
-    
-    fig = px.line(df_hist, x='Data', y='Valor', color='Loja', markers=True, 
-                  title="Histórico de Pontuação por Loja")
-    st.plotly_chart(fig, use_container_width=True)
+    with tab2:
+        st.subheader("Evolução Temporal da Pontuação")
+        lojas_grafico = st.multiselect("Selecione lojas para comparar", 
+                                       options=df['Loja'].unique(), 
+                                       default=df['Loja'].unique()[:2])
+        
+        if lojas_grafico:
+            df_hist = df[df['Loja'].isin(lojas_grafico)]
+            fig = px.line(df_hist, x='Data', y='Valor', color='Loja', markers=True)
+            st.plotly_chart(fig, use_container_width=True)
 
-with tab3:
-    st.subheader("Distribuição de Mercado")
-    fig_pie = px.pie(df_latest, names='Tipo', title="Proporção Clube vs Normal")
-    st.plotly_chart(fig_pie)
+else:
+    st.warning("Aguardando carregamento dos dados...")
+
+# Rodapé
+st.markdown("---")
+st.caption(f"Última sincronização: {get_brasilia_time() if 'df' in locals() else 'N/A'}")
