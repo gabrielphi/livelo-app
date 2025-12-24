@@ -23,8 +23,18 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # O Streamlit busca automaticamente em [connections.gsheets]
-        conn = st.connection("gsheets", type=GSheetsConnection)
+        # Acessa os segredos manualmente para limpar a chave
+        creds = st.secrets["connections"]["gsheets"]
+        
+        # Sanitização manual: Remove possíveis espaços e garante que \n sejam quebras reais
+        fixed_key = creds["private_key"].replace("\\n", "\n").strip()
+        
+        # Passa o dicionário de credenciais corrigido explicitamente
+        conn = st.connection("gsheets", 
+                             type=GSheetsConnection, 
+                             **creds, 
+                             private_key=fixed_key)
+        
         df = conn.read()
         
         # Limpeza e Tipagem
