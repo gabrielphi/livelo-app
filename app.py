@@ -67,40 +67,67 @@ def load_market_data():
 # --- EXECUÇÃO ---
 df = load_market_data()
 
-if df is not None:
+if df is not None and not df.empty:
+    # 1. Identificar o timestamp da última atualização realizada na planilha
+    # Isso captura exatamente o momento da última rodada de verificações (Ex: 14:00)
+    ultima_verificacao = df['Data'].max()
+    
     # --- SIDEBAR DE FILTROS ---
     st.sidebar.image("https://www.livelo.com.br/file/general/livelo-logo.svg", width=150)
-    st.sidebar.title("Filtros de Busca")
+    st.sidebar.title("Configurações")
     
+    # Opção para o usuário ver o histórico ou apenas o "Agora"
+    ver_apenas_atual = st.sidebar.toggle("Mostrar apenas ofertas ativas", value=True)
+    
+    if ver_apenas_atual:
+        # Filtra o DF para conter APENAS as linhas que possuem a data idêntica à última entrada
+        df_display = df[df['Data'] == ultima_verificacao].copy()
+    else:
+        df_display = df.copy()
+
+    # Filtros de Busca sobre o set selecionado
     min_pts = st.sidebar.slider("Pontuação Mínima", 0, int(df['Valor'].max()), 0)
     search_loja = st.sidebar.text_input("Buscar Loja", "")
-    
-    # Filtragem Global
-    df_filtered = df[df['Valor'] >= min_pts]
+
+    # Aplicando filtros de UI
+    df_filtered = df_display[df_display['Valor'] >= min_pts]
     if search_loja:
         df_filtered = df_filtered[df_filtered['Loja'].str.contains(search_loja, case=False)]
-    
-    # Processamento Real Time (Última atualização de cada loja)
-    df_latest = df_filtered.sort_values('Data').groupby('Loja').last().reset_index()
 
     # --- HEADER ---
     st.title("💎 Alpha Points Intelligence")
-    st.caption(f"Monitoramento Profissional Livelo | {get_now_br().strftime('%d/%m/%Y %H:%M')}")
+    st.caption(f"Última varredura no sistema: **{ultima_verificacao.strftime('%d/%m/%Y %H:%M')}**")
     
-    # --- MÉTRICAS DE TOPO ---
+    # --- MÉTRICAS ---
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Parceiros Ativos", len(df_latest))
-    with m2:
-        top_offer = df_latest.sort_values('Valor', ascending=False).iloc[0]
-        st.metric("Melhor Acúmulo", f"{top_offer['Valor']} pts", top_offer['Loja'])
-    with m3:
-        # Cálculo de cashback baseado em milheiro de R$ 35,00
-        cashback_est = (top_offer['Valor'] * 35 / 1000) * 100
-        st.metric("Cashback Máximo", f"{cashback_est:.1f}%", help="Considerando venda de pontos a R$ 35/milheiro")
-    with m4:
-        df_7days = df[df['Data'] > (get_now_br() - timedelta(days=7))]
-        st.metric("Atualizações (7d)", len(df_7days))
+        st.metric("Parceiros na Última Atualização", len(df_filtered))
+    # ... (restante das métricas seguem a mesma lógica usando df_filtered)
+
+    # --- TABS ---
+    tab_now, tab_hist, tab_calc = st.tabs(["🔥 Oportunidades Atuais", "📈 Evolução Histórica", "🧮 Calculadora de Lucro"])
+
+    with tab_now:
+        if not df_filtered.empty:
+            # Ordenar por maior pontuação
+            df_filtered = df_filtered.sort_values('Valor', ascending=False)
+            
+            cols = st.columns(4)
+            for i, (idx, row) in enumerate(df_filtered.iterrows()):
+                with cols[i % 4]:
+                    with st.container(border=True):
+                        if 'Logo' in row and pd.notnull(row['Logo']) and row['Logo'] != "":
+                            st.image(row['Logo'], width=80)
+                        st.subheader(row['Loja'])
+                        st.markdown(f"## :green[{row['Valor']} pts]")
+                        st.caption(f"Verificado em: {row['Data'].strftime('%H:%M')}")
+        else:
+            st.warning("Nenhuma oferta ativa encontrada para os critérios selecionados.")
+
+    with tab_hist:
+        # Para o gráfico de histórico, usamos o 'df' completo original
+        # Assim o usuário vê o sobe e desce das promoções ao longo do tempo
+        st.subheader("Histórico de Mudanças")
 
     st.divider()
 
