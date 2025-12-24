@@ -19,7 +19,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def get_now_br():
-    return datetime.now(timezone(timedelta(hours=-3)))
+    # Retorna o horário de Brasília mas como um objeto "naive" (sem TZ fixado)
+    # Isso permite comparar diretamente com o DataFrame do Pandas
+    now_utc = datetime.now(timezone.utc)
+    now_br = now_utc - timedelta(hours=3)
+    return now_br.replace(tzinfo=None
 
 @st.cache_data(ttl=300)
 def load_market_data():
@@ -44,9 +48,16 @@ def load_market_data():
         
         if not df.empty:
             df.columns = [col.strip() for col in df.columns]
-            # Garantir que Data seja datetime e Valor seja numérico
-            df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
-            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
+            
+            # CORREÇÃO AQUI: Converter para datetime e remover fuso horário (make naive)
+            df['Data'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
+            
+            # Remover linhas onde a data é inválida
+            df = df.dropna(subset=['Data'])
+            
+            # Garantir que o valor seja numérico
+            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce').fillna(0)
+            
             return df
         return None
     except Exception as e:
