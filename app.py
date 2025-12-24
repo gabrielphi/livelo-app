@@ -17,32 +17,59 @@ def get_now_br():
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # 1. Carrega o dicionário do Secrets
-        creds_info = st.secrets["connections"]["gsheets"]
-        
-        # 2. Converte para um dicionário Python comum
-        # (O Streamlit Secrets retorna um objeto especial, dict() garante compatibilidade)
-        creds_dict = dict(creds_info)
-        
-        # 3. Define os escopos necessários para o Google
+        # 1. Carrega o dicionário e garante que é mutável
+        creds_dict = dict(st.secrets["connections"]["gsheets"])
+
+        # 2. Tratamento Robusto da Private Key
+        if "private_key" in creds_dict:
+            # Pegamos a chave e removemos espaços/quebras extras nas extremidades
+            key = creds_dict["private_key"].strip()
+            
+            # CORREÇÃO: Todo o tratamento deve estar dentro deste IF
+            # Primeiro: Resolvemos as quebras de linha literais
+            key = key.replace("\\n", "\n")
+            
+            # Segundo: Removemos aspas extras que o TOML às vezes insere por erro de colagem
+            key = key.replace('"', '').replace("'", "")
+            
+            # Terceiro: Garantimos os delimitadores padrão (essencial para o Base64)
+            if not key.startswith("-----BEGIN PRIVATE KEY-----"):
+                key = "-----BEGIN PRIVATE KEY-----\n" + key
+            if not key.endswith("-----END PRIVATE KEY-----"):
+                key = key + "\n-----END PRIVATE KEY-----"
+            
+            # Devolvemos para o dicionário
+            creds_dict["private_key"] = key
+        else:
+            st.error("Chave 'private_key' não encontrada no Secrets.")
+            return None
+
+        # 3. Escopo e Autenticação
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        # 4. Autenticação via Service Account
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(credentials)
         
-        # 5. Acessa a planilha
+        # 4. Acessa a planilha e limpa dados
         sheet = client.open_by_url(creds_dict["spreadsheet"]).get_worksheet(0)
-        
-        # Converte para DataFrame
         data = sheet.get_all_records()
-        return pd.DataFrame(data)
+        
+        df = pd.DataFrame(data)
+        
+        # 5. Tratamento de colunas (opcional mas recomendado)
+        if not df.empty:
+            # Remove espaços nos nomes das colunas que vêm do Excel/Sheets
+            df.columns = [col.strip() for col in df.columns]
+            return df
+        
+        return None
 
     except Exception as e:
-        st.error(f"Erro na conexão: {e}")
+        # Log detalhado do erro para facilitar o debug
+        st.error(f"❌ Erro na conexão: {str(e)}")
         return None
 # --- EXECUÇÃO ---
 df = load_market_data()
