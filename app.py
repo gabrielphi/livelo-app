@@ -5,23 +5,16 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta, timezone
 
-# --- 1. CONFIGURAÇÃO DA UI (Sempre no topo) ---
+# --- 1. CONFIGURAÇÃO DA UI ---
 st.set_page_config(page_title="Alpha Points Intel", page_icon="💎", layout="wide")
 
-# CSS Inteligente: Adapta-se automaticamente ao tema (Claro ou Escuro)
+# CSS Inteligente: Adapta-se ao tema (Claro ou Escuro)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
-    /* Força a tipografia e cores baseadas no tema do Streamlit */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
-        color: var(--text-color);
-    }
-
-    /* Títulos e textos do cabeçalho */
-    h1, h2, h3, p, span {
-        color: var(--text-color) !important;
     }
 
     /* Estilização dos Cards de Oferta */
@@ -50,11 +43,10 @@ st.markdown("""
         max-width: 120px;
         object-fit: contain;
         margin-bottom: 15px;
-        filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.2));
     }
 
     .points-value {
-        color: #10b981; /* Verde esmeralda (funciona em ambos os temas) */
+        color: #10b981; 
         font-size: 2.2rem;
         font-weight: 800;
         margin: 5px 0;
@@ -77,20 +69,6 @@ st.markdown("""
         gap: 8px;
     }
 
-    .stTabs [data-baseweb="tab"] {
-        border-radius: 8px;
-        color: var(--text-color);
-        opacity: 0.6;
-    }
-
-    .stTabs [aria-selected="true"] {
-        background-color: var(--background-color) !important;
-        color: var(--text-color) !important;
-        opacity: 1 !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-    
-    /* Metrics fix */
     [data-testid="stMetric"] {
         background-color: var(--secondary-background-color);
         border: 1px solid var(--border-color);
@@ -110,7 +88,6 @@ def get_now_br():
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # Puxa credenciais do st.secrets
         creds_dict = dict(st.secrets["connections"]["gsheets"])
         if "private_key" in creds_dict:
             key = creds_dict["private_key"].strip().replace("\\n", "\n")
@@ -145,7 +122,6 @@ def load_market_data():
 df = load_market_data()
 
 if df is not None and not df.empty:
-    # Identifica o timestamp da última atualização feita na planilha
     ultima_verificacao = df['Data'].max()
     
     # --- SIDEBAR ---
@@ -156,14 +132,11 @@ if df is not None and not df.empty:
         min_pts = st.slider("Mínimo de Pontos", 0, int(df['Valor'].max()), 0)
         search_loja = st.text_input("🔍 Buscar Loja")
 
-    # Lógica de Snapshot: Se ligado, mostra apenas o que foi coletado no último timestamp
     if ver_apenas_atual:
         df_display = df[df['Data'] == ultima_verificacao].copy()
     else:
-        # Pega a última entrada conhecida de cada loja
         df_display = df.sort_values('Data').groupby('Loja').last().reset_index()
 
-    # Filtros de interface
     df_filtered = df_display[df_display['Valor'] >= min_pts]
     if search_loja:
         df_filtered = df_filtered[df_filtered['Loja'].str.contains(search_loja, case=False)]
@@ -198,13 +171,18 @@ if df is not None and not df.empty:
             cols = st.columns(4)
             for i, (idx, row) in enumerate(df_filtered.iterrows()):
                 with cols[i % 4]:
+                    # --- LÓGICA DA MOEDA ---
+                    # Verifica o valor na coluna 'Moeda'. Se for "Dolar", muda o texto.
+                    moeda_val = str(row.get('Moeda', 'Real')).strip().title()
+                    label_pts = "Pontos por Dolar" if moeda_val == "Dolar" else "Pontos por Real"
+                    
                     logo = row['Logo'] if pd.notnull(row['Logo']) and row['Logo'] != "" else "https://via.placeholder.com/150"
                     st.markdown(f"""
                         <div class="offer-card">
                             <img src="{logo}" class="store-logo">
                             <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 5px;">{row['Loja']}</div>
                             <div class="points-value">{row['Valor']}</div>
-                            <div class="points-label">Pontos por Real</div>
+                            <div class="points-label">{label_pts}</div>
                             <div style="margin-top: 15px; font-size: 0.75rem; opacity: 0.6;">
                                 Atualizado às {row['Data'].strftime('%H:%M')}
                             </div>
@@ -215,7 +193,7 @@ if df is not None and not df.empty:
 
     with tab_hist:
         st.subheader("Tendência de Acúmulo")
-        lojas_hist = st.multiselect("Selecione lojas para comparar", df['Loja'].unique(), default=df['Loja'].unique()[:3])
+        lojas_hist = st.multiselect("Selecione lojas para comparar", df['Loja'].unique(), default=df['Loja'].unique()[:3] if len(df['Loja'].unique()) > 0 else None)
         if lojas_hist:
             df_plot = df[df['Loja'].isin(lojas_hist)].sort_values('Data')
             fig = px.line(df_plot, x='Data', y='Valor', color='Loja', markers=True, template="plotly_dark")
@@ -227,17 +205,25 @@ if df is not None and not df.empty:
         if not df_filtered.empty:
             c1, c2 = st.columns(2)
             with c1:
-                v_compra = st.number_input("Valor do Produto (R$)", min_value=1.0, value=1000.0)
+                v_compra = st.number_input("Valor do Produto", min_value=1.0, value=1000.0)
                 loja_sel = st.selectbox("Parceiro Escolhido", options=df_filtered['Loja'].tolist())
-                pts_v = df_filtered[df_filtered['Loja'] == loja_sel]['Valor'].values[0]
+                row_sel = df_filtered[df_filtered['Loja'] == loja_sel].iloc[0]
+                pts_v = row_sel['Valor']
+                moeda_sel = str(row_sel.get('Moeda', 'Real')).strip().title()
+            
             with c2:
                 v_milha = st.slider("Preço de Venda do Milheiro (R$)", 15.0, 45.0, 35.0)
+                
+                # Cálculo básico
                 total_pts = v_compra * pts_v
                 retorno = (total_pts / 1000) * v_milha
                 custo_f = v_compra - retorno
 
             st.markdown(f"""
                 <div style="background-color: var(--secondary-background-color); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color); margin-top: 20px;">
+                    <div style="text-align: center; margin-bottom: 15px; opacity: 0.8;">
+                        Modo de Cálculo: <b>{moeda_sel}</b>
+                    </div>
                     <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center;">
                         <div><p style="opacity: 0.7; margin:0;">Pontos</p><h3>{int(total_pts):,}</h3></div>
                         <div><p style="opacity: 0.7; margin:0;">Cashback</p><h3 style="color:#10b981;">R$ {retorno:.2f}</h3></div>
