@@ -12,47 +12,38 @@ def get_now_br():
     return datetime.now(timezone(timedelta(hours=-3)))
 
 # --- FUNÇÃO DE CONEXÃO DIRETA (SEM ST.CONNECTION) ---
+
+
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # 1. Recuperar segredos do Streamlit
-        # Certifique-se de que no seu secrets.toml as chaves estão identadas corretamente
-        creds_dict = dict(st.secrets["connections"]["gsheets"])
+        # 1. Carrega o dicionário do Secrets
+        creds_info = st.secrets["connections"]["gsheets"]
         
-        # 2. Definir o Escopo
+        # 2. Converte para um dicionário Python comum
+        # (O Streamlit Secrets retorna um objeto especial, dict() garante compatibilidade)
+        creds_dict = dict(creds_info)
+        
+        # 3. Define os escopos necessários para o Google
         scope = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         
-        # 3. Formatar a Private Key (correção de quebras de linha)
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-
-        # 4. Autenticação direta com Google Auth
+        # 4. Autenticação via Service Account
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(credentials)
         
-        # 5. Abrir a planilha pela URL
-        # Extraímos a URL que você forneceu no TOML
-        spreadsheet_url = creds_dict.get("spreadsheet")
-        sheet = client.open_by_url(spreadsheet_url).get_worksheet(0) # Abre a primeira aba
+        # 5. Acessa a planilha
+        sheet = client.open_by_url(creds_dict["spreadsheet"]).get_worksheet(0)
         
-        # 6. Converter para DataFrame
+        # Converte para DataFrame
         data = sheet.get_all_records()
-        df = pd.DataFrame(data)
-        
-        # Limpeza e Tipagem
-        if not df.empty:
-            df['Data'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
-            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
-            return df
-        return None
-            
-    except Exception as e:
-        st.error(f"❌ Erro crítico na conexão: {e}")
-        return None
+        return pd.DataFrame(data)
 
+    except Exception as e:
+        st.error(f"Erro na conexão: {e}")
+        return None
 # --- EXECUÇÃO ---
 df = load_market_data()
 
