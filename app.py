@@ -5,35 +5,28 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURAÇÃO DA UI ---
+# --- 1. CONFIGURAÇÃO DA UI (Sempre no topo) ---
 st.set_page_config(page_title="Alpha Points Intel", page_icon="💎", layout="wide")
 
-# CSS Moderno compatível com Temas Claro/Escuro
+# CSS Inteligente: Adapta-se automaticamente ao tema (Claro ou Escuro)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
 
-    /* Variáveis de Cores para Modo Escuro/Claro Automático */
-    :root {
-        --card-bg: var(--secondary-background-color);
-        --card-shadow: rgba(0, 0, 0, 0.3);
-        --text-main: var(--text-color);
-        --accent-green: #10b981;
+    /* Força a tipografia e cores baseadas no tema do Streamlit */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+        color: var(--text-color);
     }
 
-    /* Ajuste de visibilidade do Header e Captions */
-    .stApp h1, .stApp h2, .stApp h3, .stApp p, .stApp span, .stApp label {
+    /* Títulos e textos do cabeçalho */
+    h1, h2, h3, p, span {
         color: var(--text-color) !important;
-    }
-    
-    .stCaption {
-        color: var(--text-color) !important;
-        opacity: 0.8;
     }
 
     /* Estilização dos Cards de Oferta */
     .offer-card {
-        background: var(--secondary-background-color);
+        background-color: var(--secondary-background-color);
         padding: 24px;
         border-radius: 16px;
         border: 1px solid var(--border-color);
@@ -43,6 +36,7 @@ st.markdown("""
         align-items: center;
         text-align: center;
         margin-bottom: 20px;
+        min-height: 280px;
     }
 
     .offer-card:hover {
@@ -53,13 +47,14 @@ st.markdown("""
 
     .store-logo {
         height: 50px;
-        filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.1));
+        max-width: 120px;
+        object-fit: contain;
         margin-bottom: 15px;
-        border-radius: 8px;
+        filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.2));
     }
 
     .points-value {
-        color: var(--accent-green);
+        color: #10b981; /* Verde esmeralda (funciona em ambos os temas) */
         font-size: 2.2rem;
         font-weight: 800;
         margin: 5px 0;
@@ -71,16 +66,19 @@ st.markdown("""
         font-size: 0.8rem;
         font-weight: 600;
         text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
-    /* Customização das Tabs para Dark Mode */
+    /* Customização das Tabs */
     .stTabs [data-baseweb="tab-list"] {
         background-color: var(--secondary-background-color);
         border-radius: 12px;
-        padding: 5px;
+        padding: 6px;
+        gap: 8px;
     }
 
     .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
         color: var(--text-color);
         opacity: 0.6;
     }
@@ -88,11 +86,11 @@ st.markdown("""
     .stTabs [aria-selected="true"] {
         background-color: var(--background-color) !important;
         color: var(--text-color) !important;
-        opacity: 1;
-        border-radius: 8px;
+        opacity: 1 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-
-    /* Métrica de Topo Estilizada */
+    
+    /* Metrics fix */
     [data-testid="stMetric"] {
         background-color: var(--secondary-background-color);
         border: 1px solid var(--border-color);
@@ -102,42 +100,82 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ... (Funções de dados get_now_br e load_market_data permanecem iguais)
+# --- 2. FUNÇÕES DE SUPORTE ---
 
-# --- LÓGICA DE EXECUÇÃO ---
+def get_now_br():
+    now_utc = datetime.now(timezone.utc)
+    now_br = now_utc - timedelta(hours=3)
+    return now_br.replace(tzinfo=None)
+
+@st.cache_data(ttl=300)
+def load_market_data():
+    try:
+        # Puxa credenciais do st.secrets
+        creds_dict = dict(st.secrets["connections"]["gsheets"])
+        if "private_key" in creds_dict:
+            key = creds_dict["private_key"].strip().replace("\\n", "\n")
+            key = key.replace('"', '').replace("'", "")
+            if not key.startswith("-----BEGIN PRIVATE KEY-----"):
+                key = "-----BEGIN PRIVATE KEY-----\n" + key
+            if not key.endswith("-----END PRIVATE KEY-----"):
+                key = key + "\n-----END PRIVATE KEY-----"
+            creds_dict["private_key"] = key
+        
+        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(credentials)
+        
+        sheet = client.open_by_url(creds_dict["spreadsheet"]).get_worksheet(0)
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        
+        if not df.empty:
+            df.columns = [col.strip() for col in df.columns]
+            df['Data'] = pd.to_datetime(df['Data'], dayfirst=True, errors='coerce')
+            df = df.dropna(subset=['Data'])
+            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce').fillna(0)
+            return df
+        return None
+    except Exception as e:
+        st.error(f"❌ Erro na conexão: {str(e)}")
+        return None
+
+# --- 3. EXECUÇÃO DO APP ---
+
 df = load_market_data()
 
 if df is not None and not df.empty:
+    # Identifica o timestamp da última atualização feita na planilha
     ultima_verificacao = df['Data'].max()
-    
-    # --- HEADER ---
-    # Usando container para garantir espaçamento
-    with st.container():
-        st.title("💎 Alpha Points Intelligence")
-        st.markdown(f"**Status:** Monitoramento Ativo | **Sincronização:** `{ultima_verificacao.strftime('%d/%m/%Y %H:%M')}`")
     
     # --- SIDEBAR ---
     with st.sidebar:
         st.image("https://www.livelo.com.br/file/general/livelo-logo.svg", width=120)
-        st.title("Painel de Controle")
-        ver_apenas_atual = st.toggle("Filtrar Última Varredura", value=True)
-        min_pts = st.slider("Pontuação Mínima", 0, int(df['Valor'].max()), 0)
+        st.title("Configurações")
+        ver_apenas_atual = st.toggle("Apenas Última Varredura", value=True)
+        min_pts = st.slider("Mínimo de Pontos", 0, int(df['Valor'].max()), 0)
         search_loja = st.text_input("🔍 Buscar Loja")
 
-    # Filtros
+    # Lógica de Snapshot: Se ligado, mostra apenas o que foi coletado no último timestamp
     if ver_apenas_atual:
         df_display = df[df['Data'] == ultima_verificacao].copy()
     else:
+        # Pega a última entrada conhecida de cada loja
         df_display = df.sort_values('Data').groupby('Loja').last().reset_index()
 
+    # Filtros de interface
     df_filtered = df_display[df_display['Valor'] >= min_pts]
     if search_loja:
         df_filtered = df_filtered[df_filtered['Loja'].str.contains(search_loja, case=False)]
 
-    # --- MÉTRICAS ---
+    # --- HEADER ---
+    st.title("💎 Alpha Points Intelligence")
+    st.markdown(f"Status: **Online** | Última sincronização: `{ultima_verificacao.strftime('%d/%m/%Y %H:%M')}`")
+    
+    # Métricas
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Parceiros", len(df_filtered))
+        st.metric("Parceiros Ativos", len(df_filtered))
     with m2:
         if not df_filtered.empty:
             top_row = df_filtered.sort_values('Valor', ascending=False).iloc[0]
@@ -145,14 +183,14 @@ if df is not None and not df.empty:
     with m3:
         if not df_filtered.empty:
             cashback = (top_row['Valor'] * 35 / 1000) * 100
-            st.metric("ROI Est.", f"{cashback:.1f}%")
+            st.metric("ROI Máximo Est.", f"{cashback:.1f}%")
     with m4:
-        st.metric("Database", "Livelo v2", delta="Online")
+        st.metric("Base de Dados", "Livelo v2", delta="Sync OK")
 
     st.divider()
 
-    # --- CONTEÚDO ---
-    tab_now, tab_hist, tab_calc = st.tabs(["🔥 Oportunidades", "📈 Análise Histórica", "🧮 Calculadora"])
+    # --- TABS ---
+    tab_now, tab_hist, tab_calc = st.tabs(["🔥 Oportunidades", "📈 Histórico", "🧮 Calculadora"])
 
     with tab_now:
         if not df_filtered.empty:
@@ -160,21 +198,53 @@ if df is not None and not df.empty:
             cols = st.columns(4)
             for i, (idx, row) in enumerate(df_filtered.iterrows()):
                 with cols[i % 4]:
-                    logo_url = row['Logo'] if pd.notnull(row['Logo']) and row['Logo'] != "" else "https://via.placeholder.com/150"
-                    
-                    # Layout HTML Moderno com suporte a Dark Mode
+                    logo = row['Logo'] if pd.notnull(row['Logo']) and row['Logo'] != "" else "https://via.placeholder.com/150"
                     st.markdown(f"""
                         <div class="offer-card">
-                            <img src="{logo_url}" class="store-logo">
-                            <div style="font-size: 1.1rem; font-weight: 600; margin-bottom: 5px;">{row['Loja']}</div>
+                            <img src="{logo}" class="store-logo">
+                            <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 5px;">{row['Loja']}</div>
                             <div class="points-value">{row['Valor']}</div>
                             <div class="points-label">Pontos por Real</div>
-                            <div style="margin-top: 15px; font-size: 0.7rem; opacity: 0.6;">
-                                Verificado às {row['Data'].strftime('%H:%M')}
+                            <div style="margin-top: 15px; font-size: 0.75rem; opacity: 0.6;">
+                                Atualizado às {row['Data'].strftime('%H:%M')}
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
         else:
-            st.warning("Nenhuma oferta encontrada para os filtros atuais.")
+            st.warning("Nenhuma oferta encontrada para os critérios selecionados.")
 
-    # ... (Restante do código das abas Tab_Hist e Tab_Calc)
+    with tab_hist:
+        st.subheader("Tendência de Acúmulo")
+        lojas_hist = st.multiselect("Selecione lojas para comparar", df['Loja'].unique(), default=df['Loja'].unique()[:3])
+        if lojas_hist:
+            df_plot = df[df['Loja'].isin(lojas_hist)].sort_values('Data')
+            fig = px.line(df_plot, x='Data', y='Valor', color='Loja', markers=True, template="plotly_dark")
+            fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig, use_container_width=True)
+
+    with tab_calc:
+        st.subheader("Simulador de Lucro")
+        if not df_filtered.empty:
+            c1, c2 = st.columns(2)
+            with c1:
+                v_compra = st.number_input("Valor do Produto (R$)", min_value=1.0, value=1000.0)
+                loja_sel = st.selectbox("Parceiro Escolhido", options=df_filtered['Loja'].tolist())
+                pts_v = df_filtered[df_filtered['Loja'] == loja_sel]['Valor'].values[0]
+            with c2:
+                v_milha = st.slider("Preço de Venda do Milheiro (R$)", 15.0, 45.0, 35.0)
+                total_pts = v_compra * pts_v
+                retorno = (total_pts / 1000) * v_milha
+                custo_f = v_compra - retorno
+
+            st.markdown(f"""
+                <div style="background-color: var(--secondary-background-color); padding: 25px; border-radius: 12px; border: 1px solid var(--border-color); margin-top: 20px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center;">
+                        <div><p style="opacity: 0.7; margin:0;">Pontos</p><h3>{int(total_pts):,}</h3></div>
+                        <div><p style="opacity: 0.7; margin:0;">Cashback</p><h3 style="color:#10b981;">R$ {retorno:.2f}</h3></div>
+                        <div><p style="opacity: 0.7; margin:0;">Custo Final</p><h3 style="color:#3b82f6;">R$ {custo_f:.2f}</h3></div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
+else:
+    st.error("Não foi possível carregar os dados. Verifique a planilha ou as chaves de API.")
