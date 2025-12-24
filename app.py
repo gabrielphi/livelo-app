@@ -23,24 +23,34 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # Acessa os segredos manualmente para limpar a chave
-        creds = st.secrets["connections"]["gsheets"]
+        # 1. Carregamos as credenciais do segredo como um dicionário comum
+        # .to_dict() é necessário se estiver no Streamlit Cloud
+        creds = dict(st.secrets["connections"]["gsheets"])
         
-        # Sanitização manual: Remove possíveis espaços e garante que \n sejam quebras reais
-        fixed_key = creds["private_key"].replace("\\n", "\n").strip()
+        # 2. Removemos a chave 'type' do dicionário para não dar conflito 
+        # com o type=GSheetsConnection do st.connection
+        creds.pop("type", None)
         
-        # Passa o dicionário de credenciais corrigido explicitamente
-        conn = st.connection("gsheets", 
-                             type=GSheetsConnection, 
-                             **creds, 
-                             private_key=fixed_key)
+        # 3. Limpeza rigorosa da private_key para evitar o erro de Base64
+        if "private_key" in creds:
+            # Remove aspas extras, trata as quebras de linha literais (\n) 
+            # e limpa espaços em branco nas pontas
+            creds["private_key"] = creds["private_key"].replace("\\n", "\n").strip()
+        
+        # 4. Agora passamos os argumentos limpos
+        conn = st.connection(
+            "gsheets", 
+            type=GSheetsConnection, 
+            **creds
+        )
         
         df = conn.read()
         
-        # Limpeza e Tipagem
+        # Limpeza e Tipagem (mantendo sua lógica original)
         df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
         df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
         return df
+        
     except Exception as e:
         st.error(f"❌ Erro na extração de dados: {e}")
         return None
