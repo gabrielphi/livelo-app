@@ -23,34 +23,32 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # 1. Carregamos as credenciais do segredo como um dicionário comum
-        # .to_dict() é necessário se estiver no Streamlit Cloud
+        # 1. Carrega os segredos como dicionário
         creds = dict(st.secrets["connections"]["gsheets"])
         
-        # 2. Removemos a chave 'type' do dicionário para não dar conflito 
-        # com o type=GSheetsConnection do st.connection
+        # 2. Puxa a URL e remove do dicionário para não "poluir" a conexão
+        spreadsheet_url = creds.pop("spreadsheet", None)
+        
+        # 3. Remove o 'type' para evitar o erro de múltiplos valores
         creds.pop("type", None)
         
-        # 3. Limpeza rigorosa da private_key para evitar o erro de Base64
+        # 4. Limpa a private_key (correção do erro original de Base64)
         if "private_key" in creds:
-            # Remove aspas extras, trata as quebras de linha literais (\n) 
-            # e limpa espaços em branco nas pontas
             creds["private_key"] = creds["private_key"].replace("\\n", "\n").strip()
         
-        # 4. Agora passamos os argumentos limpos
-        conn = st.connection(
-            "gsheets", 
-            type=GSheetsConnection, 
-            **creds
-        )
+        # 5. Cria a conexão APENAS com as credenciais de autenticação
+        conn = st.connection("gsheets", type=GSheetsConnection, **creds)
         
-        df = conn.read()
+        # 6. Faz a leitura informando explicitamente a planilha
+        # Se spreadsheet_url for None, ele tentará usar o padrão do segredo
+        df = conn.read(spreadsheet=spreadsheet_url)
         
-        # Limpeza e Tipagem (mantendo sua lógica original)
-        df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
-        df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
-        return df
-        
+        # --- Limpeza e Tipagem ---
+        if df is not None:
+            df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
+            df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
+            return df
+            
     except Exception as e:
         st.error(f"❌ Erro na extração de dados: {e}")
         return None
