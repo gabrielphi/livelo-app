@@ -23,27 +23,30 @@ st.markdown("""
 @st.cache_data(ttl=300)
 def load_market_data():
     try:
-        # 1. Carrega os segredos como dicionário
-        creds = dict(st.secrets["connections"]["gsheets"])
+        # 1. Pegamos os dados brutos do TOML
+        # Usamos dict() para criar uma cópia mutável
+        creds_dict = dict(st.secrets["connections"]["gsheets"])
         
-        # 2. Puxa a URL e remove do dicionário para não "poluir" a conexão
-        spreadsheet_url = creds.pop("spreadsheet", None)
+        # 2. Extraímos a URL da planilha antes de limpar o dicionário
+        url = creds_dict.get("spreadsheet")
         
-        # 3. Remove o 'type' para evitar o erro de múltiplos valores
-        creds.pop("type", None)
+        # 3. Sanitização da Private Key (O erro original de 65 caracteres)
+        # Forçamos a conversão de \\n literal para quebra de linha real
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n").strip()
         
-        # 4. Limpa a private_key (correção do erro original de Base64)
-        if "private_key" in creds:
-            creds["private_key"] = creds["private_key"].replace("\\n", "\n").strip()
+        # 4. Criamos a conexão passando o dicionário como um ÚNICO argumento
+        # Isso evita que o 'project_id' ou 'spreadsheet' sejam interpretados como argumentos de função
+        conn = st.connection(
+            "gsheets",
+            type=GSheetsConnection,
+            service_account_info=creds_dict
+        )
         
-        # 5. Cria a conexão APENAS com as credenciais de autenticação
-        conn = st.connection("gsheets", type=GSheetsConnection, **creds)
+        # 5. Lemos a planilha usando a URL que extraímos
+        df = conn.read(spreadsheet=url)
         
-        # 6. Faz a leitura informando explicitamente a planilha
-        # Se spreadsheet_url for None, ele tentará usar o padrão do segredo
-        df = conn.read(spreadsheet=spreadsheet_url)
-        
-        # --- Limpeza e Tipagem ---
+        # Limpeza e Tipagem
         if df is not None:
             df['Data'] = pd.to_datetime(df['Data'], dayfirst=True)
             df['Valor'] = pd.to_numeric(df['Valor'], errors='coerce')
