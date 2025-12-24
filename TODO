@@ -1,0 +1,86 @@
+# Roadmap: Transformação de Script para SaaS
+
+Para elevar este projeto de um script pessoal para uma ferramenta de mercado (SaaS), precisamos focar em três pilares:
+
+1. **Infraestrutura de Dados**
+2. **Inteligência de Negócio**
+3. **Experiência do Usuário (UI/UX)**
+
+---
+
+## Parte 1: Transformação Visual (Adeus, Looker)
+
+O Looker Studio sobre Google Sheets é lento e limitado para dados em tempo real. Para uma ferramenta de mercado, você precisa de uma interface que transmita confiança e agilidade.
+
+### Solução A: Streamlit (Acelerador de Mercado)
+
+Se você quer manter tudo em Python, o Streamlit é a melhor escolha. Ele permite criar Dashboards interativos e bonitos em poucas horas.
+
+- **Vantagem**: Permite criar filtros por categoria, busca por loja e gráficos de histórico de pontos (ATH) com interatividade.
+- **Hospedagem**: Streamlit Cloud (gratuito) ou uma instância simples na Railway/Render.
+
+### Solução B: Supabase + Next.js (Profissionalismo Total)
+
+Para vender isso como um serviço, você deve migrar para um banco de dados real e um frontend moderno.
+
+- **Banco de Dados**: Supabase (PostgreSQL). Substitua o Google Sheets por ele. O Supabase já oferece autenticação e API pronta.
+- **Frontend**: Next.js com Tailwind CSS e Shadcn/UI. Isso dará a aparência de um software moderno (como as dashboards da Stripe ou Vercel).
+
+---
+
+## Parte 2: 5 Requisitos para Ferramenta de Mercado
+
+Aqui estão os requisitos técnicos e funcionais para tornar o seu scraper um produto competitivo:
+
+### 1. Motor de Cálculo de "Cashback Equivalente"
+
+No mercado de milhas, pontos são dinheiro. A ferramenta não deve mostrar apenas "10 pontos", mas sim o valor real.
+
+- **Funcionalidade**: O sistema deve cruzar o valor do milheiro (ex: R$ 35,00 por 1000 pontos) e calcular o desconto real na compra.
+- **Exemplo**: "10 pontos por Real na Amazon = 35% de 'Desconto' em pontos". Isso facilita a decisão de compra do usuário leigo.
+
+### 2. Monitoramento de Paridade Cruzada (Livelo vs. Esfera)
+
+Quem usa Livelo geralmente também usa Esfera (Santander). Uma ferramenta de mercado precisa comparar as duas.
+
+- **Funcionalidade**: Adicionar um scraper para o programa Esfera e mostrar uma tabela comparativa: "Hoje o Carrefour está dando 5 pontos na Livelo, mas 8 pontos na Esfera".
+- **Valor Gerado**: Evita que o usuário perca pontos por não saber que o concorrente tem uma oferta melhor.
+
+### 3. Sistema de Alerta por Palavras-Chave (Push Inteligente)
+
+Notificar 250 lojas no Slack gera ruído. O usuário quer ser notificado sobre o que ele deseja comprar.
+
+- **Funcionalidade**: Criar uma "Watchlist". O usuário cadastra "iPhone" ou "Nike". Quando qualquer loja de tecnologia ou a Nike atingir um valor ≥ X, ele recebe uma notificação prioritária.
+- **Tecnologia**: Usar Telegram Bots ou Push Notifications (via Firebase), que são mais acessíveis que o Slack para o público final.
+
+### 4. Categorização por Inteligência de Dados
+
+O scraper atual não sabe o que as lojas vendem.
+
+- **Funcionalidade**: Criar um mapeamento de categorias (Moda, Viagens, Eletro, Pet).
+- **Análise de Mercado**: Permitir que o usuário filtre por "Melhores ofertas de Moda hoje". Isso permite criar relatórios segmentados e parcerias com nichos específicos.
+
+### 5. Detecção de Promoções de Transferência Bonificada
+
+O grande lucro não está no acúmulo, mas na transferência (Ex: Livelo para Smiles com 100% de bônus).
+
+- **Funcionalidade**: O scraper deve monitorar a página de "Transferências" da Livelo.
+- **Alerta Combinado**: Avisar o usuário: "Hoje a Magalu está 10:1 E a Livelo está com 100% para a Smiles. Seus pontos valem o DOBRO agora!".
+
+---
+
+## Resumo Técnico da Próxima Evolução
+
+| Componente | Atual (Script) | Mercado (SaaS) |
+|------------|----------------|----------------|
+| **Banco de Dados** | Google Sheets | Supabase (PostgreSQL) |
+| **Frontend** | Looker Studio | Streamlit ou Next.js |
+| **Alertas** | Slack Webhook | Telegram Bot + Push Mobile |
+| **Inteligência** | Aumento de Pontos | Valor em R$ + Paridade Esfera |
+| **Frequência** | 2x ao dia | De 1h em 1h (GitHub Actions ou Worker) |
+
+---
+
+## Próxima Ação Sugerida
+
+Gostaria que eu adaptasse o código do Scraper para enviar os dados para o Supabase (PostgreSQL) em vez do Google Sheets? Isso permitiria que você criasse uma interface muito mais rápida e profissional imediatamente.
